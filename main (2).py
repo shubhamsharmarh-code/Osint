@@ -122,8 +122,18 @@ def format_data_response(data, query_type):
     if not data or data.strip() == "":
         return None
     
-    # Check for "No records found" message
-    if "No records found" in data or "no records found" in data.lower():
+    # Check for various "no records found" patterns
+    no_records_patterns = [
+        "no records found",
+        "no record found", 
+        "not found",
+        "no data available",
+        "no results",
+        "data not found"
+    ]
+    
+    data_lower = data.lower()
+    if any(pattern in data_lower for pattern in no_records_patterns):
         return None
     
     # Try to parse if it's JSON-like data
@@ -222,58 +232,109 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = clean_input(query)
     url = API_URL + query
     try:
-        r = requests.get(url, timeout=10)
-        if r.status_code == 200 and r.text.strip():
-            # Check for "No records found" or empty data first
-            if ("No records found" in r.text or 
-                "no records found" in r.text.lower() or 
-                r.text.strip() == "[]" or 
-                r.text.strip() == "{}"):
-                await searching_msg.edit_text(
-                    "❌ <b>NO RECORDS FOUND</b>\n"
-                    "╔══════════════════════╗\n"
-                    "┃ 🔍 No data available     ┃\n"
-                    "┃ 💳 Credits not deducted  ┃\n"
-                    "╚══════════════════════╝",
-                    parse_mode='HTML'
-                )
-                return
-                
-            # Format the response nicely
-            formatted_result = format_data_response(r.text, query)
-            
-            if formatted_result:
-                # Only deduct coins if useful data was found and formatted
-                user_credits[uid] -= 5
-                
-                await searching_msg.edit_text(
-                    f"{formatted_result}\n\n"
-                    f"🎯 <b>Query:</b> <code>{query}</code>\n"
-                    f"💰 <b>Coins Left:</b> {user_credits[uid]}",
-                    parse_mode='HTML'
-                )
-            else:
-                await searching_msg.edit_text(
-                    "❌ <b>NO USEFUL DATA FOUND</b>\n"
-                    "╔══════════════════════╗\n"
-                    "┃ 🔍 No useful data        ┃\n"
-                    "┃ 💳 Credits not deducted  ┃\n"
-                    "╚══════════════════════╝",
-                    parse_mode='HTML'
-                )
-        else:
+        r = requests.get(url, timeout=15)  # Increased timeout
+        
+        # Check if request was successful
+        if r.status_code != 200:
             await searching_msg.edit_text(
-                "❌ <b>NO DATA FOUND</b>\n"
+                "❌ <b>SERVER ERROR</b>\n"
                 "╔══════════════════════╗\n"
-                "┃ 🔍 Server returned empty ┃\n"
-                "┃ 💳 Credits not deducted  ┃\n"
+                "┃ ⚠️ API server not responding ┃\n"
+                "┃ 💳 Credits not deducted      ┃\n"
                 "╚══════════════════════╝",
                 parse_mode='HTML'
             )
+            return
+            
+        response_text = r.text.strip()
+        
+        # Check if response is empty
+        if not response_text:
+            await searching_msg.edit_text(
+                "❌ <b>NO DATA FOUND</b>\n"
+                "╔══════════════════════╗\n"
+                "┃ 🔍 Server returned empty     ┃\n"
+                "┃ 💳 Credits not deducted      ┃\n"
+                "╚══════════════════════╝",
+                parse_mode='HTML'
+            )
+            return
+            
+        # Check for various "no records found" patterns
+        no_records_patterns = [
+            "no records found",
+            "no record found", 
+            "not found",
+            "no data",
+            "no results",
+            "[]",
+            "{}",
+            "null"
+        ]
+        
+        response_lower = response_text.lower()
+        if any(pattern in response_lower for pattern in no_records_patterns):
+            await searching_msg.edit_text(
+                "❌ <b>NO RECORDS FOUND</b>\n"
+                "╔══════════════════════╗\n"
+                "┃ 🔍 No data available         ┃\n"
+                "┃ 💳 Credits not deducted      ┃\n"
+                "╚══════════════════════╝",
+                parse_mode='HTML'
+            )
+            return
+            
+        # Try to format the response
+        formatted_result = format_data_response(response_text, query)
+        
+        if formatted_result:
+            # Only deduct coins when we have successfully formatted useful data
+            user_credits[uid] -= 5
+            
+            await searching_msg.edit_text(
+                f"{formatted_result}\n\n"
+                f"🎯 <b>Query:</b> <code>{query}</code>\n"
+                f"💰 <b>Coins Left:</b> {user_credits[uid]}",
+                parse_mode='HTML'
+            )
+        else:
+            # Raw response exists but couldn't be formatted properly
+            await searching_msg.edit_text(
+                "❌ <b>NO USEFUL DATA FOUND</b>\n"
+                "╔══════════════════════╗\n"
+                "┃ 🔍 Data format not supported ┃\n"
+                "┃ 💳 Credits not deducted      ┃\n"
+                "╚══════════════════════╝",
+                parse_mode='HTML'
+            )
+            
     except requests.exceptions.Timeout:
-        await searching_msg.edit_text("⏰ Search timeout. Credits not deducted.")
+        await searching_msg.edit_text(
+            "⏰ <b>SEARCH TIMEOUT</b>\n"
+            "╔══════════════════════╗\n"
+            "┃ 🕐 Request took too long     ┃\n"
+            "┃ 💳 Credits not deducted      ┃\n"
+            "╚══════════════════════╝",
+            parse_mode='HTML'
+        )
+    except requests.exceptions.ConnectionError:
+        await searching_msg.edit_text(
+            "❌ <b>CONNECTION ERROR</b>\n"
+            "╔══════════════════════╗\n"
+            "┃ 🌐 Can't reach API server    ┃\n"
+            "┃ 💳 Credits not deducted      ┃\n"
+            "╚══════════════════════╝",
+            parse_mode='HTML'
+        )
     except Exception as e:
-        await searching_msg.edit_text("⚠️ Server error. Credits not deducted.")
+        await searching_msg.edit_text(
+            "⚠️ <b>UNEXPECTED ERROR</b>\n"
+            "╔══════════════════════╗\n"
+            "┃ 🔧 System error occurred     ┃\n"
+            "┃ 💳 Credits not deducted      ┃\n"
+            "╚══════════════════════╝",
+            parse_mode='HTML'
+        )
 
 async def addcoin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
