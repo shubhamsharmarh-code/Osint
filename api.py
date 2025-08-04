@@ -1,3 +1,4 @@
+
 import logging
 import re
 import requests
@@ -117,10 +118,18 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='HTML'
         )
 
-def format_data_response(data, query_type):
-    """Format the API response in a very stylish way"""
-    if not data or data.strip() == "":
-        return None
+def is_valid_data(data):
+    """Check if the response contains valid searchable data"""
+    if not data or not isinstance(data, str):
+        return False
+    
+    data = data.strip()
+    if not data:
+        return False
+    
+    # Check for empty JSON responses
+    if data in ['[]', '{}', 'null', 'None']:
+        return False
     
     # Check for various "no records found" patterns
     no_records_patterns = [
@@ -129,17 +138,29 @@ def format_data_response(data, query_type):
         "not found",
         "no data available",
         "no results",
-        "data not found"
+        "data not found",
+        "no information",
+        "empty result",
+        "nothing found"
     ]
     
     data_lower = data.lower()
-    if any(pattern in data_lower for pattern in no_records_patterns):
+    for pattern in no_records_patterns:
+        if pattern in data_lower:
+            return False
+    
+    return True
+
+def format_data_response(data, query_type):
+    """Format the API response in a very stylish way"""
+    if not is_valid_data(data):
         return None
     
     # Try to parse if it's JSON-like data
     try:
         import json
         parsed_data = json.loads(data)
+        
         if isinstance(parsed_data, list) and len(parsed_data) > 0:
             formatted = "🎯 <b>SEARCH RESULTS FOUND</b>\n"
             formatted += "╔════════════════════════╗\n"
@@ -174,7 +195,7 @@ def format_data_response(data, query_type):
             formatted += "╚════════════════════════╝"
             return formatted
             
-        elif isinstance(parsed_data, dict):
+        elif isinstance(parsed_data, dict) and parsed_data:
             formatted = "🎯 <b>SEARCH RESULTS FOUND</b>\n"
             formatted += "╔════════════════════════╗\n"
             
@@ -184,24 +205,30 @@ def format_data_response(data, query_type):
             
             formatted += "╚════════════════════════╝"
             return formatted
-    except:
+    except json.JSONDecodeError:
+        pass
+    except Exception:
         pass
     
     # If not JSON, format as plain text with style
     lines = data.strip().split('\n')
+    useful_lines = [line for line in lines if line.strip()]
+    
+    if not useful_lines:
+        return None
+    
     formatted = "🎯 <b>SEARCH RESULTS FOUND</b>\n"
     formatted += "╔════════════════════════╗\n"
     
-    for line in lines:
-        if line.strip():
-            if ':' in line:
-                parts = line.split(':', 1)
-                if len(parts) == 2:
-                    formatted += f"┃ 📌 <b>{parts[0].strip()}:</b> <code>{parts[1].strip()}</code>\n"
-                else:
-                    formatted += f"┃ • {line.strip()}\n"
+    for line in useful_lines:
+        if ':' in line:
+            parts = line.split(':', 1)
+            if len(parts) == 2:
+                formatted += f"┃ 📌 <b>{parts[0].strip()}:</b> <code>{parts[1].strip()}</code>\n"
             else:
                 formatted += f"┃ • {line.strip()}\n"
+        else:
+            formatted += f"┃ • {line.strip()}\n"
     
     formatted += "╚════════════════════════╝"
     return formatted
@@ -231,8 +258,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     query = clean_input(query)
     url = API_URL + query
+    
+    # Variable to track if we should deduct credits
+    should_deduct_credits = False
+    response_text = ""
+    
     try:
-        r = requests.get(url, timeout=15)  # Increased timeout
+        r = requests.get(url, timeout=15)
         
         # Check if request was successful
         if r.status_code != 200:
@@ -260,20 +292,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
             
-        # Check for various "no records found" patterns
-        no_records_patterns = [
-            "no records found",
-            "no record found", 
-            "not found",
-            "no data",
-            "no results",
-            "[]",
-            "{}",
-            "null"
-        ]
-        
-        response_lower = response_text.lower()
-        if any(pattern in response_lower for pattern in no_records_patterns):
+        # Check if the data is valid using our validation function
+        if not is_valid_data(response_text):
             await searching_msg.edit_text(
                 "❌ <b>NO RECORDS FOUND</b>\n"
                 "╔══════════════════════╗\n"
@@ -288,7 +308,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         formatted_result = format_data_response(response_text, query)
         
         if formatted_result:
-            # Only deduct coins when we have successfully formatted useful data
+            # Only NOW we deduct credits - after confirming we have good formatted data
+            should_deduct_credits = True
             user_credits[uid] -= 5
             
             await searching_msg.edit_text(
@@ -326,11 +347,27 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "╚══════════════════════╝",
             parse_mode='HTML'
         )
-    except Exception as e:
+    except requests.exceptions.RequestException as e:
         await searching_msg.edit_text(
-            "⚠️ <b>UNEXPECTED ERROR</b>\n"
+            "❌ <b>NETWORK ERROR</b>\n"
             "╔══════════════════════╗\n"
-            "┃ 🔧 System error occurred     ┃\n"
+            "┃ 🌐 Network request failed    ┃\n"
+            "┃ 💳 Credits not deducted      ┃\n"
+            "╚══════════════════════╝",
+            parse_mode='HTML'
+        )
+    except Exception as e:
+        # Log the actual error for debugging
+        logging.error(f"Unexpected error in handle_text: {str(e)}")
+        
+        # If credits were deducted, refund them
+        if should_deduct_credits:
+            user_credits[uid] += 5
+            
+        await searching_msg.edit_text(
+            "⚠️ <b>SYSTEM ERROR</b>\n"
+            "╔══════════════════════╗\n"
+            "┃ 🔧 Unexpected error occurred ┃\n"
             "┃ 💳 Credits not deducted      ┃\n"
             "╚══════════════════════╝",
             parse_mode='HTML'
@@ -377,4 +414,4 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"❌ Error: {e}")
         print("Make sure no other bot instance is running.")
-    
+        
