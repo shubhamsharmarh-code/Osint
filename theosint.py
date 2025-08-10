@@ -1,4 +1,5 @@
 import logging
+import re
 import requests
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
@@ -9,7 +10,6 @@ from telegram.ext import (
 # --- Config ---
 BOT_TOKEN = '8259380902:AAHcbQF6-IKh0tHm5-paYp4tnrpy4B7tcgw'
 OWNER_ID = 7835198116
-API_URL = 'https://appi.ytcampss.store/Osint/ration.php?id='
 
 # --- Data Stores ---
 user_credits = {}
@@ -18,10 +18,15 @@ referred_users = set()
 # --- Logging ---
 logging.basicConfig(level=logging.INFO)
 
+# --- Normalize Query ---
+def clean_input(text):
+    text = text.strip().replace(" ", "").replace("-", "")
+    return text
+
 # --- Keyboards ---
 main_keyboard = InlineKeyboardMarkup([
     [
-        InlineKeyboardButton("🔍 Ration Search", callback_data="search"),
+        InlineKeyboardButton("🔍 Search", callback_data="search"),
         InlineKeyboardButton("💰 Balance", callback_data="balance")
     ],
     [
@@ -33,52 +38,6 @@ main_keyboard = InlineKeyboardMarkup([
     ]
 ])
 
-# --- Format Function ---
-def format_ration_response(data):
-    """Format ration card API response in a beautiful style"""
-    if not data:
-        return None
-
-    try:
-        info = requests.utils.json.loads(data)
-    except:
-        return None
-
-    if not isinstance(info, dict) or not info:
-        return None
-
-    formatted = "🎯 <b>RATION CARD DETAILS</b>\n"
-    formatted += "╔════════════════════════╗\n"
-
-    if "name" in info:
-        formatted += f"┃ 👤 <b>Name:</b> <code>{info['name']}</code>\n"
-    if "ration_number" in info:
-        formatted += f"┃ 🆔 <b>Ration No:</b> <code>{info['ration_number']}</code>\n"
-    if "father_name" in info:
-        formatted += f"┃ 👨‍👦 <b>Father:</b> <code>{info['father_name']}</code>\n"
-    if "address" in info:
-        formatted += f"┃ 🏠 <b>Address:</b> <code>{info['address']}</code>\n"
-    if "category" in info:
-        formatted += f"┃ 🏷️ <b>Category:</b> <code>{info['category']}</code>\n"
-
-    # Members list
-    if "members" in info and isinstance(info["members"], list) and info["members"]:
-        formatted += "┣━━━━━━━━━━━━━━━━━━━━━━━━┫\n"
-        formatted += "┃ 👥 <b>Family Members</b>\n"
-        formatted += "┣━━━━━━━━━━━━━━━━━━━━━━━━┫\n"
-        for i, member in enumerate(info["members"], 1):
-            formatted += f"┃ #{i}\n"
-            if "name" in member:
-                formatted += f"┃ 👤 Name: <code>{member['name']}</code>\n"
-            if "relation" in member:
-                formatted += f"┃ 🔗 Relation: <code>{member['relation']}</code>\n"
-            if "age" in member:
-                formatted += f"┃ 🎂 Age: <code>{member['age']}</code>\n"
-            formatted += "┃ ─────────────────────\n"
-
-    formatted += "╚════════════════════════╝"
-    return formatted
-
 # --- Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -87,7 +46,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if uid not in user_credits:
         user_credits[uid] = 5  # 1 free search = 5 coins
 
-    # Referral system
     if args and args[0].startswith("ref_"):
         ref_id = int(args[0][4:])
         if ref_id != uid and ref_id in user_credits and uid not in referred_users:
@@ -102,9 +60,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
 
     await update.message.reply_text(
-        "🛡️ <b>Security Notice:</b> Due to privacy concerns, only Ration Card search is available now.\n\n"
-        "Send your ration card number to search.",
-        parse_mode='HTML',
+        "🕵️ I can look for almost everything. Just send me your request.",
         reply_markup=main_keyboard
     )
 
@@ -115,9 +71,15 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "search":
         await query.message.reply_text(
-            "📨 Send your <b>Ration Card Number</b> to search.\n\n"
-            "💸 Each search costs 5 coins.",
-            parse_mode='HTML'
+            "📨 Send phone number, email, username, IP, domain, or social profile to search.\n\n"
+            "🔍 Examples:\n"
+            "• example@mail.com      (Email)\n"
+            "• t.me/xyz              (Telegram)\n"
+            "• example.com           (Domain)\n"
+            "• facebook.com/xyz      (Facebook)\n"
+            "• instagram.com/xyz     (Instagram)\n\n"
+            "🧠 Better input = better results\n"
+            "💸 Each search costs 5 coins."
         )
 
     elif query.data == "balance":
@@ -150,6 +112,69 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='HTML'
         )
 
+def is_valid_data(data):
+    if not data or not isinstance(data, str):
+        return False
+    data = data.strip()
+    if not data or data in ['[]', '{}', 'null', 'None']:
+        return False
+
+    data_lower = data.lower()
+    error_patterns = [
+        "rate limit exceeded", "try again after", "status: error", "error:",
+        "failed", "server error", "internal error", "service unavailable",
+        "timeout", "too many requests", "limit reached", "quota exceeded"
+    ]
+    if any(p in data_lower for p in error_patterns):
+        return False
+
+    no_records_patterns = [
+        "no records found", "no record found", "not found", "no data available",
+        "no results", "data not found", "no information", "empty result", "nothing found"
+    ]
+    if any(p in data_lower for p in no_records_patterns):
+        return False
+
+    return True
+
+def format_combined_response(primary_data):
+    if not is_valid_data(primary_data):
+        return None
+    formatted = "🎯 <b>SEARCH RESULTS FOUND</b>\n"
+    formatted += "╔════════════════════════╗\n"
+    try:
+        import json
+        parsed_data = json.loads(primary_data)
+
+        if isinstance(parsed_data, list) and len(parsed_data) > 0:
+            for i, item in enumerate(parsed_data, 1):
+                formatted += f"┃ <b>📋 Record #{i}</b>\n"
+                formatted += "┣━━━━━━━━━━━━━━━━━━━━━━━━┫\n"
+                if isinstance(item, dict):
+                    for key, value in item.items():
+                        if value and str(value).strip():
+                            formatted += f"┃ 📌 <b>{key.replace('_', ' ').title()}:</b> <code>{value}</code>\n"
+
+        elif isinstance(parsed_data, dict) and parsed_data:
+            formatted += f"┃ <b>📋 Primary Data</b>\n"
+            formatted += "┣━━━━━━━━━━━━━━━━━━━━━━━━┫\n"
+            for key, value in parsed_data.items():
+                if value and str(value).strip():
+                    formatted += f"┃ 📌 <b>{key.replace('_', ' ').title()}:</b> <code>{value}</code>\n"
+
+    except:
+        lines = primary_data.strip().split('\n')
+        for line in lines:
+            if ':' in line:
+                parts = line.split(':', 1)
+                if len(parts) == 2:
+                    formatted += f"┃ 📌 <b>{parts[0].strip()}:</b> <code>{parts[1].strip()}</code>\n"
+            else:
+                formatted += f"┃ • {line.strip()}\n"
+
+    formatted += "╚════════════════════════╝"
+    return formatted
+
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     query = update.message.text.strip()
@@ -172,22 +197,46 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     searching_msg = await update.message.reply_text("🔍 Searching...")
 
-    try:
-        r = requests.get(API_URL + query, timeout=15)
+    query = clean_input(query)
+    should_deduct_credits = False
+    response_text = ""
 
-        if r.status_code != 200 or not r.text.strip():
+    try:
+        payload = {
+            "token": "8217808614:04wbEZ3i",
+            "request": query,
+            "limit": 100,
+            "lang": "ru"
+        }
+        url = "https://leakosintapi.com/"
+        r = requests.post(url, json=payload, timeout=15)
+
+        if r.status_code != 200:
             await searching_msg.edit_text(
-                "❌ <b>NO DATA FOUND</b>\n"
+                "❌ <b>SERVER ERROR</b>\n"
                 "╔══════════════════════╗\n"
-                "┃ 🔍 Server returned empty     ┃\n"
+                "┃ ⚠️ API server not responding ┃\n"
                 "┃ 💳 Credits not deducted      ┃\n"
                 "╚══════════════════════╝",
                 parse_mode='HTML'
             )
             return
 
-        formatted_result = format_ration_response(r.text)
+        response_text = r.text.strip()
+        if not is_valid_data(response_text):
+            await searching_msg.edit_text(
+                "❌ <b>NO RECORDS FOUND</b>\n"
+                "╔══════════════════════╗\n"
+                "┃ 🔍 No data available         ┃\n"
+                "┃ 💳 Credits not deducted      ┃\n"
+                "╚══════════════════════╝",
+                parse_mode='HTML'
+            )
+            return
+
+        formatted_result = format_combined_response(response_text)
         if formatted_result:
+            should_deduct_credits = True
             user_credits[uid] -= 5
             result_message = f"{formatted_result}\n\n"
             result_message += f"🎯 <b>Query:</b> <code>{query}</code>\n"
@@ -195,32 +244,23 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await searching_msg.edit_text(result_message, parse_mode='HTML')
         else:
             await searching_msg.edit_text(
-                "❌ <b>INVALID DATA FORMAT</b>\n"
+                "❌ <b>NO USEFUL DATA FOUND</b>\n"
                 "╔══════════════════════╗\n"
-                "┃ 📄 Could not parse response ┃\n"
-                "┃ 💳 Credits not deducted     ┃\n"
+                "┃ 🔍 Data format not supported ┃\n"
+                "┃ 💳 Credits not deducted      ┃\n"
                 "╚══════════════════════╝",
                 parse_mode='HTML'
             )
 
     except requests.exceptions.Timeout:
-        await searching_msg.edit_text(
-            "⏰ <b>SEARCH TIMEOUT</b>\n"
-            "╔══════════════════════╗\n"
-            "┃ 🕐 Request took too long    ┃\n"
-            "┃ 💳 Credits not deducted     ┃\n"
-            "╚══════════════════════╝",
-            parse_mode='HTML'
-        )
+        await searching_msg.edit_text("⏰ <b>SEARCH TIMEOUT</b>", parse_mode='HTML')
     except requests.exceptions.ConnectionError:
-        await searching_msg.edit_text(
-            "❌ <b>CONNECTION ERROR</b>\n"
-            "╔══════════════════════╗\n"
-            "┃ 🌐 Can't reach API server   ┃\n"
-            "┃ 💳 Credits not deducted     ┃\n"
-            "╚══════════════════════╝",
-            parse_mode='HTML'
-        )
+        await searching_msg.edit_text("❌ <b>CONNECTION ERROR</b>", parse_mode='HTML')
+    except Exception as e:
+        logging.error(f"Unexpected error: {e}")
+        if should_deduct_credits:
+            user_credits[uid] += 5
+        await searching_msg.edit_text("⚠️ <b>SYSTEM ERROR</b>", parse_mode='HTML')
 
 # --- Main ---
 def main():
@@ -232,4 +272,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-        
