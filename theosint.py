@@ -276,6 +276,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text(
             "📨 Send phone number, email, username, IP, domain, or social profile to search.\n\n"
             "🔍 Examples:\n"
+            "• 919821933777          (Number)\n"
             "• example@mail.com      (Email)\n"
             "• t.me/xyz              (Telegram)\n"
             "• example.com           (Domain)\n"
