@@ -1,6 +1,8 @@
+
 import logging
 import re
 import requests
+import json
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
@@ -11,12 +13,81 @@ from telegram.ext import (
 BOT_TOKEN = '8259380902:AAHcbQF6-IKh0tHm5-paYp4tnrpy4B7tcgw'
 OWNER_ID = 7835198116
 
+# --- API Config (can be changed by owner) ---
+api_config = {
+    "token": "8217808614:04wbEZ3i",
+    "url": "https://leakosintapi.com/"
+}
+
 # --- Data Stores ---
 user_credits = {}
 referred_users = set()
+all_users = set()  # Track all users for broadcasting
 
 # --- Logging ---
 logging.basicConfig(level=logging.INFO)
+
+# --- Translation function ---
+def translate_to_english(text):
+    """Simple translation mapping for common Russian terms"""
+    if not text or not isinstance(text, str):
+        return text
+    
+    russian_to_english = {
+        'имя': 'Name',
+        'фамилия': 'Last Name', 
+        'телефон': 'Phone',
+        'email': 'Email',
+        'адрес': 'Address',
+        'город': 'City',
+        'страна': 'Country',
+        'дата': 'Date',
+        'возраст': 'Age',
+        'пол': 'Gender',
+        'работа': 'Job',
+        'компания': 'Company',
+        'должность': 'Position',
+        'зарплата': 'Salary',
+        'образование': 'Education',
+        'университет': 'University',
+        'школа': 'School',
+        'социальные': 'Social Networks',
+        'профиль': 'Profile',
+        'аккаунт': 'Account',
+        'пароль': 'Password',
+        'логин': 'Login',
+        'регистрация': 'Registration',
+        'последний': 'Last Seen',
+        'статус': 'Status',
+        'друзья': 'Friends',
+        'подписчики': 'Followers',
+        'местоположение': 'Location',
+        'ip': 'IP Address',
+        'домен': 'Domain',
+        'сайт': 'Website',
+        'владелец': 'Owner',
+        'администратор': 'Administrator',
+        'модератор': 'Moderator',
+        'пользователь': 'User',
+        'активность': 'Activity',
+        'онлайн': 'Online',
+        'офлайн': 'Offline',
+        'неизвестно': 'Unknown',
+        'данные': 'Data',
+        'информация': 'Information',
+        'результат': 'Result',
+        'найдено': 'Found',
+        'записи': 'Records',
+        'база': 'Database',
+        'источник': 'Source'
+    }
+    
+    # Replace Russian words with English equivalents
+    translated = text
+    for russian, english in russian_to_english.items():
+        translated = translated.replace(russian, english)
+    
+    return translated
 
 # --- Normalize Query ---
 def clean_input(text):
@@ -38,10 +109,138 @@ main_keyboard = InlineKeyboardMarkup([
     ]
 ])
 
+# --- Admin Commands ---
+async def api_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    if uid != OWNER_ID:
+        await update.message.reply_text("❌ You are not authorized to use this command.")
+        return
+    
+    args = context.args
+    if len(args) < 1:
+        await update.message.reply_text(
+            "🔧 <b>API Configuration</b>\n\n"
+            f"Current Token: <code>{api_config['token']}</code>\n\n"
+            "Usage:\n"
+            "• <code>/api NEW_TOKEN</code>\n"
+            "Example: <code>/api 1234567890:ABCDEF</code>",
+            parse_mode='HTML'
+        )
+        return
+    
+    new_token = ' '.join(args)
+    api_config["token"] = new_token
+    await update.message.reply_text(f"✅ API token updated to: <code>{new_token}</code>", parse_mode='HTML')
+
+async def addcoin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    if uid != OWNER_ID:
+        await update.message.reply_text("❌ You are not authorized to use this command.")
+        return
+    
+    args = context.args
+    if len(args) < 2:
+        await update.message.reply_text(
+            "💰 <b>Add Coins</b>\n\n"
+            "Usage: <code>/addcoin USER_ID AMOUNT</code>\n"
+            "Example: <code>/addcoin 123456789 100</code>",
+            parse_mode='HTML'
+        )
+        return
+    
+    try:
+        target_uid = int(args[0])
+        amount = int(args[1])
+        
+        if target_uid not in user_credits:
+            user_credits[target_uid] = 0
+        
+        user_credits[target_uid] += amount
+        
+        # Notify admin
+        await update.message.reply_text(
+            f"✅ <b>Coins Added Successfully!</b>\n"
+            f"User ID: <code>{target_uid}</code>\n"
+            f"Amount: <code>{amount} coins</code>\n"
+            f"New Balance: <code>{user_credits[target_uid]} coins</code>",
+            parse_mode='HTML'
+        )
+        
+        # Notify user
+        try:
+            await context.bot.send_message(
+                target_uid,
+                f"🎉 <b>COINS RECEIVED!</b>\n"
+                f"╔══════════════════════╗\n"
+                f"┃ 💰 <b>Amount:</b> <code>{amount} coins</code>     ┃\n"
+                f"┃ 💳 <b>New Balance:</b> <code>{user_credits[target_uid]} coins</code> ┃\n"
+                f"┃ 👑 <b>From:</b> Admin              ┃\n"
+                f"╚══════════════════════╝",
+                parse_mode='HTML'
+            )
+        except Exception as e:
+            await update.message.reply_text(f"⚠️ User notified but couldn't send message: {str(e)}")
+            
+    except ValueError:
+        await update.message.reply_text("❌ Invalid user ID or amount. Please use numbers only.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {str(e)}")
+
+async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    if uid != OWNER_ID:
+        await update.message.reply_text("❌ You are not authorized to use this command.")
+        return
+    
+    if not context.args:
+        await update.message.reply_text(
+            "📢 <b>Broadcast Message</b>\n\n"
+            "Usage: <code>/broadcast YOUR_MESSAGE_HERE</code>\n"
+            "Example: <code>/broadcast Hello everyone! New features added.</code>",
+            parse_mode='HTML'
+        )
+        return
+    
+    message = ' '.join(context.args)
+    sent_count = 0
+    failed_count = 0
+    
+    # Send status message
+    status_msg = await update.message.reply_text("📤 Broadcasting message...")
+    
+    for user_id in all_users:
+        try:
+            await context.bot.send_message(
+                user_id,
+                f"📢 <b>ADMIN BROADCAST</b>\n"
+                f"╔══════════════════════╗\n"
+                f"┃ {message}\n"
+                f"╚══════════════════════╝",
+                parse_mode='HTML'
+            )
+            sent_count += 1
+        except Exception:
+            failed_count += 1
+    
+    # Update status
+    await status_msg.edit_text(
+        f"✅ <b>Broadcast Complete!</b>\n"
+        f"╔══════════════════════╗\n"
+        f"┃ 📤 <b>Sent:</b> <code>{sent_count} users</code>        ┃\n"
+        f"┃ ❌ <b>Failed:</b> <code>{failed_count} users</code>      ┃\n"
+        f"┃ 👥 <b>Total:</b> <code>{len(all_users)} users</code>      ┃\n"
+        f"╚══════════════════════╝\n\n"
+        f"📝 <b>Message:</b> {message}",
+        parse_mode='HTML'
+    )
+
 # --- Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     args = context.args
+    
+    # Track all users
+    all_users.add(uid)
 
     if uid not in user_credits:
         user_credits[uid] = 5  # 1 free search = 5 coins
@@ -140,10 +339,11 @@ def is_valid_data(data):
 def format_combined_response(primary_data):
     if not is_valid_data(primary_data):
         return None
+    
     formatted = "🎯 <b>SEARCH RESULTS FOUND</b>\n"
     formatted += "╔════════════════════════╗\n"
+    
     try:
-        import json
         parsed_data = json.loads(primary_data)
 
         if isinstance(parsed_data, list) and len(parsed_data) > 0:
@@ -153,14 +353,20 @@ def format_combined_response(primary_data):
                 if isinstance(item, dict):
                     for key, value in item.items():
                         if value and str(value).strip():
-                            formatted += f"┃ 📌 <b>{key.replace('_', ' ').title()}:</b> <code>{value}</code>\n"
+                            # Translate key and value
+                            translated_key = translate_to_english(str(key))
+                            translated_value = translate_to_english(str(value))
+                            formatted += f"┃ 📌 <b>{translated_key.replace('_', ' ').title()}:</b> <code>{translated_value}</code>\n"
 
         elif isinstance(parsed_data, dict) and parsed_data:
             formatted += f"┃ <b>📋 Primary Data</b>\n"
             formatted += "┣━━━━━━━━━━━━━━━━━━━━━━━━┫\n"
             for key, value in parsed_data.items():
                 if value and str(value).strip():
-                    formatted += f"┃ 📌 <b>{key.replace('_', ' ').title()}:</b> <code>{value}</code>\n"
+                    # Translate key and value
+                    translated_key = translate_to_english(str(key))
+                    translated_value = translate_to_english(str(value))
+                    formatted += f"┃ 📌 <b>{translated_key.replace('_', ' ').title()}:</b> <code>{translated_value}</code>\n"
 
     except:
         lines = primary_data.strip().split('\n')
@@ -168,9 +374,13 @@ def format_combined_response(primary_data):
             if ':' in line:
                 parts = line.split(':', 1)
                 if len(parts) == 2:
-                    formatted += f"┃ 📌 <b>{parts[0].strip()}:</b> <code>{parts[1].strip()}</code>\n"
+                    # Translate both key and value
+                    translated_key = translate_to_english(parts[0].strip())
+                    translated_value = translate_to_english(parts[1].strip())
+                    formatted += f"┃ 📌 <b>{translated_key}:</b> <code>{translated_value}</code>\n"
             else:
-                formatted += f"┃ • {line.strip()}\n"
+                translated_line = translate_to_english(line.strip())
+                formatted += f"┃ • {translated_line}\n"
 
     formatted += "╚════════════════════════╝"
     return formatted
@@ -178,6 +388,9 @@ def format_combined_response(primary_data):
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     query = update.message.text.strip()
+    
+    # Track all users
+    all_users.add(uid)
 
     if uid not in user_credits:
         user_credits[uid] = 5
@@ -203,12 +416,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         payload = {
-            "token": "8217808614:04wbEZ3i",
+            "token": api_config["token"],
             "request": query,
             "limit": 100,
-            "lang": "ru"
+            "lang": "en"  # Changed to English
         }
-        url = "https://leakosintapi.com/"
+        url = api_config["url"]
         r = requests.post(url, json=payload, timeout=15)
 
         if r.status_code != 200:
@@ -265,9 +478,17 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Main ---
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
+    
+    # Command handlers
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("api", api_command))
+    app.add_handler(CommandHandler("addcoin", addcoin_command))
+    app.add_handler(CommandHandler("broadcast", broadcast_command))
+    
+    # Other handlers
     app.add_handler(CallbackQueryHandler(handle_buttons))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    
     app.run_polling()
 
 if __name__ == "__main__":
