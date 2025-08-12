@@ -5,7 +5,7 @@ import requests
 import json
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler,
+    , CommandHandler, CallbackQueryHandler,
     MessageHandler, filters, ContextTypes
 )
 
@@ -259,8 +259,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
 
     await update.message.reply_text(
-        "🕵️ I can look for almost everything. Just send me your request.",
-        reply_markup=main_keyboard
+        "🕵️ <b>Welcome to Cyreo Osint Bot!</b>\n\n"
+        "🔍 I can search for:\n"
+        "• Phone numbers\n"
+        "• Email addresses\n"
+        "• Usernames\n"
+        "• Domains\n"
+        "• Social profiles\n\n"
+        "💰 Each search costs 5 coins",
+        reply_markup=main_keyboard,
+        parse_mode='HTML'
     )
 
 async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -340,50 +348,61 @@ def format_combined_response(primary_data):
     if not is_valid_data(primary_data):
         return None
     
-    formatted = "🎯 <b>SEARCH RESULTS FOUND</b>\n"
-    formatted += "╔════════════════════════╗\n"
-    
     try:
         parsed_data = json.loads(primary_data)
-
-        if isinstance(parsed_data, list) and len(parsed_data) > 0:
-            for i, item in enumerate(parsed_data, 1):
-                formatted += f"┃ <b>📋 Record #{i}</b>\n"
-                formatted += "┣━━━━━━━━━━━━━━━━━━━━━━━━┫\n"
-                if isinstance(item, dict):
-                    for key, value in item.items():
-                        if value and str(value).strip():
-                            # Translate key and value
-                            translated_key = translate_to_english(str(key))
-                            translated_value = translate_to_english(str(value))
-                            formatted += f"┃ 📌 <b>{translated_key.replace('_', ' ').title()}:</b> <code>{translated_value}</code>\n"
-
-        elif isinstance(parsed_data, dict) and parsed_data:
-            formatted += f"┃ <b>📋 Primary Data</b>\n"
-            formatted += "┣━━━━━━━━━━━━━━━━━━━━━━━━┫\n"
-            for key, value in parsed_data.items():
-                if value and str(value).strip():
-                    # Translate key and value
-                    translated_key = translate_to_english(str(key))
-                    translated_value = translate_to_english(str(value))
-                    formatted += f"┃ 📌 <b>{translated_key.replace('_', ' ').title()}:</b> <code>{translated_value}</code>\n"
-
-    except:
+        
+        if isinstance(parsed_data, dict):
+            formatted = "🎯 <b>SEARCH RESULTS FOUND</b>\n\n"
+            
+            # Handle databases
+            if 'List' in parsed_data or any(key for key in parsed_data.keys() if isinstance(parsed_data[key], dict) and 'Data' in parsed_data[key]):
+                databases = parsed_data.get('List', parsed_data)
+                
+                for db_name, db_info in databases.items():
+                    if isinstance(db_info, dict) and 'Data' in db_info:
+                        formatted += f"🗃️ <b>{db_name}</b>\n"
+                        formatted += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                        
+                        data_records = db_info['Data']
+                        if isinstance(data_records, list):
+                            for i, record in enumerate(data_records, 1):
+                                if isinstance(record, dict):
+                                    formatted += f"<b>📄 Record {i}:</b>\n"
+                                    for key, value in record.items():
+                                        if value and str(value).strip():
+                                            translated_key = translate_to_english(str(key))
+                                            translated_value = translate_to_english(str(value))
+                                            formatted += f"• <b>{translated_key.replace('_', ' ').title()}:</b> <code>{translated_value}</code>\n"
+                                    formatted += "\n"
+                        
+                        formatted += f"📊 <b>Results:</b> {db_info.get('NumOfResults', 'N/A')}\n\n"
+            
+            # Handle other data
+            else:
+                formatted += "📋 <b>Data Found:</b>\n"
+                formatted += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                for key, value in parsed_data.items():
+                    if value and str(value).strip():
+                        translated_key = translate_to_english(str(key))
+                        translated_value = translate_to_english(str(value))
+                        formatted += f"• <b>{translated_key.replace('_', ' ').title()}:</b> <code>{translated_value}</code>\n"
+            
+            return formatted
+            
+    except Exception as e:
+        # Fallback for non-JSON data
+        formatted = "🎯 <b>SEARCH RESULTS FOUND</b>\n\n"
         lines = primary_data.strip().split('\n')
         for line in lines:
             if ':' in line:
                 parts = line.split(':', 1)
                 if len(parts) == 2:
-                    # Translate both key and value
                     translated_key = translate_to_english(parts[0].strip())
                     translated_value = translate_to_english(parts[1].strip())
-                    formatted += f"┃ 📌 <b>{translated_key}:</b> <code>{translated_value}</code>\n"
-            else:
-                translated_line = translate_to_english(line.strip())
-                formatted += f"┃ • {translated_line}\n"
-
-    formatted += "╚════════════════════════╝"
-    return formatted
+                    formatted += f"• <b>{translated_key}:</b> <code>{translated_value}</code>\n"
+        return formatted
+    
+    return None
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -477,7 +496,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Main ---
 def main():
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = .builder().token(BOT_TOKEN).build()
     
     # Command handlers
     app.add_handler(CommandHandler("start", start))
