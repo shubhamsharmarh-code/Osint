@@ -186,22 +186,21 @@ async def addcoin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {str(e)}")
 
+# Global variable to track broadcast state
+broadcast_waiting = {}
+
 async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     if uid != OWNER_ID:
         await update.message.reply_text("❌ You are not authorized to use this command.")
         return
     
-    if not context.args:
-        await update.message.reply_text(
-            "📢 <b>Broadcast Message</b>\n\n"
-            "Usage: <code>/broadcast YOUR_MESSAGE_HERE</code>\n"
-            "Example: <code>/broadcast Hello everyone! New features added.</code>",
-            parse_mode='HTML'
-        )
-        return
-    
-    message = ' '.join(context.args)
+    # Set broadcast waiting state
+    broadcast_waiting[uid] = True
+    await update.message.reply_text("📢 <b>Broadcast Mode</b>\n\nSend me the message you want to broadcast to all users:", parse_mode='HTML')
+
+async def handle_broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE, message_text: str):
+    uid = update.effective_user.id
     sent_count = 0
     failed_count = 0
     
@@ -210,14 +209,8 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     for user_id in all_users:
         try:
-            await context.bot.send_message(
-                user_id,
-                f"📢 <b>ADMIN BROADCAST</b>\n"
-                f"╔══════════════════════╗\n"
-                f"┃ {message}\n"
-                f"╚══════════════════════╝",
-                parse_mode='HTML'
-            )
+            # Send message directly without fancy formatting
+            await context.bot.send_message(user_id, message_text, parse_mode='HTML')
             sent_count += 1
         except Exception:
             failed_count += 1
@@ -230,9 +223,12 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"┃ ❌ <b>Failed:</b> <code>{failed_count} users</code>      ┃\n"
         f"┃ 👥 <b>Total:</b> <code>{len(all_users)} users</code>      ┃\n"
         f"╚══════════════════════╝\n\n"
-        f"📝 <b>Message:</b> {message}",
+        f"📝 <b>Message:</b> {message_text}",
         parse_mode='HTML'
     )
+    
+    # Clear broadcast waiting state
+    broadcast_waiting[uid] = False
 
 # --- Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -410,6 +406,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Track all users
     all_users.add(uid)
+    
+    # Check if user is in broadcast waiting mode
+    if uid in broadcast_waiting and broadcast_waiting[uid]:
+        await handle_broadcast_message(update, context, query)
+        return
 
     if uid not in user_credits:
         user_credits[uid] = 5
@@ -511,4 +512,4 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__":
-    main()
+    main ()
