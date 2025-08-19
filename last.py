@@ -10,7 +10,7 @@ from telegram.ext import (
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # --- Config ---
-BOT_TOKEN = '8132537614:AAHgKp-0ImjGGqt_PkX6SkzbfQGYOTS9ZhU'
+BOT_TOKEN = '8227679174:AAFlje8cX3pgLS1hW8in1D8uWaulGPcPWB0'
 OWNER_ID = 7835198116
 API_URL = 'https://bot.toxictanji.com/umm.php?test='
 AADHAAR_API_URL = 'https://bot.toxictanji.com/addhar.php?number='
@@ -27,14 +27,14 @@ def cleanup_old_data():
     """Clean up old user data to prevent memory issues"""
     global last_cleanup
     current_time = time.time()
-    
+
     # Run cleanup every 6 hours
     if current_time - last_cleanup > 21600:
         # Keep only users with credits > 0 or recent activity
         active_users = {uid: credits for uid, credits in user_credits.items() if credits > 0}
         user_credits.clear()
         user_credits.update(active_users)
-        
+
         last_cleanup = current_time
         logging.info(f"Cleaned up user data. Active users: {len(user_credits)}")
 
@@ -137,7 +137,7 @@ main_keyboard = InlineKeyboardMarkup([
         InlineKeyboardButton("💎 Referral", callback_data="referral")
     ],
     [
-        InlineKeyboardButton("🔐 Contact Admin", url="https://t.me/cyreo")
+        InlineKeyboardButton("🔐 Contact Admin", url="https://t.me/Cyreo")
     ]
 ])
 
@@ -398,16 +398,18 @@ async def fetch_phone_details(phone_number):
         url = API_URL + phone_number
         r = requests.get(url, timeout=15)
 
-        if r.status_code == 200 and r.text.strip():
+        # Check if response has data regardless of status code
+        if r.text.strip():
             response_text = r.text.strip()
             # Check for common error responses that should not be processed
             if any(error in response_text.lower() for error in ['error', 'failed', 'invalid', 'not found']):
                 logging.warning(f"API returned error for {phone_number}: {response_text[:100]}")
                 return None
             if is_valid_data(response_text):
+                logging.info(f"Got valid data for {phone_number} with status {r.status_code}")
                 return response_text
-        else:
-            logging.warning(f"API returned status {r.status_code} for {phone_number}")
+        
+        logging.warning(f"API returned status {r.status_code} for {phone_number}")
     except requests.exceptions.Timeout:
         logging.error(f"Timeout fetching phone details for {phone_number}")
     except requests.exceptions.RequestException as e:
@@ -422,16 +424,18 @@ async def fetch_aadhaar_details(aadhaar_number):
         url = AADHAAR_API_URL + aadhaar_number
         r = requests.get(url, timeout=15)
 
-        if r.status_code == 200 and r.text.strip():
+        # Check if response has data regardless of status code
+        if r.text.strip():
             response_text = r.text.strip()
             # Check for common error responses
             if any(error in response_text.lower() for error in ['error', 'failed', 'invalid', 'not found']):
                 logging.warning(f"Aadhaar API returned error for {aadhaar_number}: {response_text[:100]}")
                 return None
             if is_valid_data(response_text):
+                logging.info(f"Got valid Aadhaar data for {aadhaar_number} with status {r.status_code}")
                 return response_text
-        else:
-            logging.warning(f"Aadhaar API returned status {r.status_code} for {aadhaar_number}")
+        
+        logging.warning(f"Aadhaar API returned status {r.status_code} for {aadhaar_number}")
     except requests.exceptions.Timeout:
         logging.error(f"Timeout fetching Aadhaar details for {aadhaar_number}")
     except requests.exceptions.RequestException as e:
@@ -492,39 +496,39 @@ def format_combined_response(primary_data, secondary_data=None):
 
         # Mobile Number
         if record.get("mobile"):
-            formatted += f"📱 {record['mobile']}\n"
+            formatted += f"📱 <b>Mobile Number:</b> {record['mobile']}\n"
 
         # Name
         if record.get("name"):
-            formatted += f"👤 {record['name']}\n"
+            formatted += f"👤 <b>Name:</b> {record['name']}\n"
 
         # Father Name
         father = record.get("father_name") or record.get("father") or record.get("guardian_name")
         if father:
-            formatted += f"👨‍👦 {father}\n"
+            formatted += f"👨‍👦 <b>Father Name:</b> {father}\n"
 
         # Address
         if record.get("address"):
-            formatted += f"🏠 {record['address']}\n"
+            formatted += f"🏠 <b>Address:</b> {record['address']}\n"
 
         # Circle/Operator
         if record.get("circle"):
-            formatted += f"📍 {record['circle']}\n"
+            formatted += f"📍 <b>Circle/Operator:</b> {record['circle']}\n"
 
         # Aadhaar
         aadhaar = (record.get("aadhaar") or record.get("id_number") or 
                    record.get("aadhar") or record.get("aadhaar_number"))
         if aadhaar:
-            formatted += f"🆔 {aadhaar}\n"
+            formatted += f"🆔 <b>Aadhaar Number:</b> {aadhaar}\n"
 
         # Alternative number
         alt_num = record.get("alternative_number") or record.get("alt_number")
         if alt_num:
-            formatted += f"📞 Alt: {alt_num}\n"
+            formatted += f"📞 <b>Alternative Number:</b> {alt_num}\n"
 
         # ID
         if record.get("id"):
-            formatted += f"🔸 Id: {record['id']}\n"
+            formatted += f"🔸 <b>Record ID:</b> {record['id']}\n"
 
         formatted += "\n"
         record_count += 1
@@ -547,14 +551,14 @@ def format_combined_response(primary_data, secondary_data=None):
     if linked_numbers and len(linked_numbers) > 1:
         formatted += f"🔗 <b>Linked Numbers ({len(linked_numbers)} found):</b>\n"
         for number in sorted(linked_numbers):
-            formatted += f"• {number} "
+            formatted += f"• {number}\n"
         formatted += "\n"
 
         if operators:
-            formatted += f"📡 <b>Operators:</b> {', '.join(sorted(filter(None, operators)))}\n"
+            formatted += f"📡 <b>Network Operators:</b> {', '.join(sorted(filter(None, operators)))}\n\n"
 
     formatted += "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    formatted += "💰 <b>5 coins used</b>"
+    formatted += "💰 <b>5 coins deducted from your balance</b>"
 
     return formatted
 
@@ -562,57 +566,57 @@ def format_raw_data_stylish(raw_data):
     """Format raw/non-JSON data in a stylish way similar to JSON responses"""
     formatted = "🎯 <b>SEARCH RESULTS</b>\n"
     formatted += "━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    
+
     # Try to extract information from raw data
     lines = raw_data.strip().split('\n')
     record_count = 1
-    
+
     formatted += f"📋 <b>Record {record_count}:</b>\n"
-    
+
     # Look for common patterns in raw data
     mobile_found = False
     name_found = False
-    
+
     for line in lines:
         line = line.strip()
         if not line:
             continue
-            
+
         # Try to identify mobile numbers
         mobile_match = re.search(r'(\d{10})', line)
         if mobile_match and not mobile_found:
-            formatted += f"📱 {mobile_match.group(1)}\n"
+            formatted += f"📱 <b>Mobile Number:</b> {mobile_match.group(1)}\n"
             mobile_found = True
             continue
-            
+
         # Try to identify names (lines with alphabets, not just numbers)
         if re.search(r'[a-zA-Z]{3,}', line) and not re.search(r'^\d+$', line) and not name_found:
             # Clean up common API response artifacts
             cleaned_line = re.sub(r'^["\'\[\]\{\}\,\:\;]+|["\'\[\]\{\}\,\:\;]+$', '', line)
             cleaned_line = re.sub(r'["\']', '', cleaned_line).strip()
-            
+
             if len(cleaned_line) > 2 and not cleaned_line.lower() in ['null', 'none', 'n/a']:
-                formatted += f"👤 {cleaned_line}\n"
+                formatted += f"👤 <b>Name:</b> {cleaned_line}\n"
                 name_found = True
                 continue
-        
+
         # For other data, show as general info
         if len(line) > 3:
             cleaned_line = re.sub(r'^["\'\[\]\{\}\,\:\;]+|["\'\[\]\{\}\,\:\;]+$', '', line)
             cleaned_line = re.sub(r'["\']', '', cleaned_line).strip()
-            
+
             if cleaned_line and not cleaned_line.lower() in ['null', 'none', 'n/a', '{', '}', '[', ']']:
-                formatted += f"🔸 {cleaned_line}\n"
-    
+                formatted += f"🔸 <b>Additional Info:</b> {cleaned_line}\n"
+
     formatted += "\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    formatted += "💰 <b>5 coins used</b>"
-    
+    formatted += "💰 <b>5 coins deducted from your balance</b>"
+
     return formatted
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Periodic cleanup
     cleanup_old_data()
-    
+
     uid = update.effective_user.id
     query = update.message.text.strip()
 
@@ -635,7 +639,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(query) > 50:
         await update.message.reply_text("❌ Input too long. Please send a valid phone number.")
         return
-    
+
     if not re.search(r'\d', query):
         await update.message.reply_text("❌ Please send a valid phone number with digits.")
         return
