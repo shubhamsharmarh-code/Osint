@@ -10,7 +10,7 @@ from telegram.ext import (
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # --- Config ---
-BOT_TOKEN = '8259380902:AAHcbQF6-IKh0tHm5-paYp4tnrpy4B7tcgw'
+BOT_TOKEN = '8132537614:AAHgKp-0ImjGGqt_PkX6SkzbfQGYOTS9ZhU'
 OWNER_ID = 7835198116
 API_URL = 'https://bot.toxictanji.com/umm.php?test='
 AADHAAR_API_URL = 'https://bot.toxictanji.com/addhar.php?number='
