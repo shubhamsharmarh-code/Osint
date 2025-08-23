@@ -12,8 +12,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 # --- Config ---
 BOT_TOKEN = '8227679174:AAFlje8cX3pgLS1hW8in1D8uWaulGPcPWB0'
 OWNER_ID = 7835198116
-API_URL = 'https://bot.toxictanji.com/umm.php?test='
-AADHAAR_API_URL = 'https://bot.toxictanji.com/addhar.php?number='
+API_URL = ''
+AADHAAR_API_URL = ''
 
 # --- Data Stores ---
 user_credits = {}
